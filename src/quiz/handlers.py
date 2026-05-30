@@ -170,6 +170,13 @@ async def on_done(
     await _send_next_or_finish(cb.message, state, conn, questions, cb.from_user.id)
 
 
+@router.callback_query()
+async def stale_callback(cb: CallbackQuery) -> None:
+    """Answer any callback not handled above (stale button, wrong state, post-restart)
+    so the Telegram client never hangs on a loading spinner."""
+    await cb.answer("That button's no longer active — /start to begin.")
+
+
 @router.message(Quiz.awaiting_followup, F.text)
 async def on_followup_text(
     message: Message,
@@ -182,7 +189,7 @@ async def on_followup_text(
         await message.answer("Something got out of sync — /restart to redo.")
         return
     answers_repo.upsert_answer(
-        conn, message.from_user.id, qid, message.text.strip(), now=_now()
+        conn, message.from_user.id, qid, message.text.strip() or "—", now=_now()
     )
     await _send_next_or_finish(message, state, conn, questions, message.from_user.id)
 
