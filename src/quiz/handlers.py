@@ -135,12 +135,18 @@ async def on_option(
         return
 
     # multi: toggle, re-render in place.
-    selections = await session.get_selections(state)
-    selections = engine.toggle_selection(selections, oid, question.select)
-    await session.set_selections(state, selections)
-    rows = engine.build_keyboard(question, selections=selections)
-    await cb.message.edit_reply_markup(reply_markup=_markup(rows))
-    await cb.answer()
+    current = await session.get_selections(state)
+    updated = engine.toggle_selection(current, oid, question.select)
+    if updated != current:
+        await session.set_selections(state, updated)
+        rows = engine.build_keyboard(question, selections=updated)
+        # Only edit when the markup actually changed — re-sending identical
+        # markup raises TelegramBadRequest "message is not modified".
+        await cb.message.edit_reply_markup(reply_markup=_markup(rows))
+        await cb.answer()
+    else:
+        # Tapped a new option while already at the cap — acknowledge, no change.
+        await cb.answer(f"Pick exactly {question.select}.")
 
 
 @router.callback_query(Quiz.answering, F.data.startswith("done:"))
