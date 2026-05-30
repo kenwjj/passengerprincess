@@ -56,3 +56,28 @@ def test_toggle_caps_at_select_n():
 def test_is_selection_complete():
     assert not engine.is_selection_complete(["nature"], select_n=2)
     assert engine.is_selection_complete(["nature", "food"], select_n=2)
+
+
+def test_single_keyboard_rows(sample_questions):
+    q = engine.find_question(sample_questions, "food_adventure")
+    rows = engine.build_keyboard(q, selections=[])
+    # One button per option, each its own row; callback q:<qid>:<oid>.
+    assert rows == [
+        [("🍜 Ramen", "q:food_adventure:ramen")],
+        [("🍣 Sushi", "q:food_adventure:sushi")],
+    ]
+
+
+def test_multi_keyboard_marks_selected_and_adds_done(sample_questions):
+    q = engine.find_question(sample_questions, "vibe_mix")
+    rows = engine.build_keyboard(q, selections=["nature"])
+    labels = [btn[0] for row in rows for btn in row]
+    assert "✅ 🌿 Nature" in labels   # selected gets a check prefix
+    assert "🏛 Culture" in labels      # unselected unchanged
+    # Last row is the Done button.
+    assert rows[-1] == [("✔️ Done (1/2)", "done:vibe_mix")]
+
+
+def test_parse_callback():
+    assert engine.parse_callback("q:vibe_mix:nature") == ("q", "vibe_mix", "nature")
+    assert engine.parse_callback("done:vibe_mix") == ("done", "vibe_mix", None)

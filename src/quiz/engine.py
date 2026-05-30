@@ -41,3 +41,32 @@ def toggle_selection(current: list[str], oid: str, select_n: int) -> list[str]:
 
 def is_selection_complete(current: list[str], select_n: int) -> bool:
     return len(current) == select_n
+
+
+def build_keyboard(question: Question, selections: list[str]) -> list[list[tuple[str, str]]]:
+    """Return rows of (label, callback_data). One option per row.
+
+    For multi questions, selected options get a ✅ prefix and a Done row is appended.
+    """
+    rows: list[list[tuple[str, str]]] = []
+    for opt in question.options:
+        label = opt.label
+        if question.type == "multi" and opt.id in selections:
+            label = f"✅ {opt.label}"
+        rows.append([(label, f"q:{question.id}:{opt.id}")])
+
+    if question.type == "multi":
+        count = len(selections)
+        rows.append([(f"✔️ Done ({count}/{question.select})", f"done:{question.id}")])
+
+    return rows
+
+
+def parse_callback(data: str) -> tuple[str, str, str | None]:
+    """Parse callback_data. 'q:<qid>:<oid>' -> ('q', qid, oid); 'done:<qid>' -> ('done', qid, None)."""
+    parts = data.split(":")
+    if parts[0] == "q":
+        return ("q", parts[1], parts[2])
+    if parts[0] == "done":
+        return ("done", parts[1], None)
+    raise ValueError(f"unknown callback data: {data}")
