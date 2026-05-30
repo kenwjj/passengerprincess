@@ -8,7 +8,8 @@
       {"id": "ramen", "label": "🍜 Ramen"},
       {"id": "sushi", "label": "🍣 Sushi"},
       {"id": "pizza", "label": "🍕 Pizza"},
-      {"id": "burger", "label": "🍔 Burger"}
+      {"id": "burger", "label": "🍔 Burger"},
+      {"id": "others", "label": "🍽 Other (type it in)", "followup": "Type your ultimate meal:"}
     ]
   },
   {
@@ -26,13 +27,15 @@
   {
     "id": "drink",
     "category": "Drink preference",
-    "type": "single",
-    "text": "Pick your poison:",
+    "type": "multi",
+    "select": 2,
+    "text": "Pick your top 2 drinks:",
     "options": [
       {"id": "coffee", "label": "☕ Coffee"},
       {"id": "wine", "label": "🍷 Wine"},
       {"id": "beer", "label": "🍺 Beer"},
       {"id": "cocktails", "label": "🍸 Cocktails"},
+      {"id": "tea", "label": "🍵 Tea"},
       {"id": "none", "label": "🚱 None"}
     ]
   },
