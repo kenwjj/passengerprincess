@@ -17,7 +17,7 @@ real design/copy surface.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Language | Python 3.11+ | Builder preference |
-| Telegram library | python-telegram-bot v21+ (async) | Builder choice; most tutorials/docs |
+| Telegram library | aiogram 3.x (async) | Builder choice; clean built-in FSM, first-class inline keyboards/callbacks |
 | Quiz location | DM with bot | Clean per-user state; group chat reserved for trip use later |
 | Bot token | Create new via BotFather | None exists yet |
 | Question source | `questions.json` (git-tracked) | Wife edits copy/options without code or DB migration |
@@ -36,7 +36,7 @@ real design/copy surface.
 ### Stack & dependencies
 
 - Python 3.11+
-- `python-telegram-bot` v21+ (async `Application`, `run_polling`)
+- `aiogram` 3.x (async `Bot` + `Dispatcher`/`Router`, `dp.start_polling`)
 - `python-dotenv` (env loading)
 - stdlib `sqlite3`, `json`
 - Dev: `pytest`
@@ -45,7 +45,7 @@ real design/copy surface.
 
 ```
 src/
-  bot.py              # entry: load env, build Application, register handlers, run_polling
+  bot.py              # entry: load env, build Bot + Dispatcher, include routers, start_polling
   config.py           # env loading (BOT_TOKEN), file paths
   questions.py        # load + validate questions.json
   questions.json      # quiz content (wife edits this)
@@ -56,8 +56,9 @@ src/
   quiz/
     engine.py         # PURE logic: next question, build keyboard markup data,
                       #   validate select-N, detect followup
-    session.py        # context.user_data helpers (current index, partial multi picks, pending followup)
-    handlers.py       # /start, /restart, /profile, /help, quiz callback, followup text handler
+    states.py         # aiogram FSM StatesGroup (in-quiz, awaiting-followup)
+    session.py        # FSMContext data helpers (current index, partial multi picks, pending followup)
+    handlers.py       # Router: /start, /restart, /profile, /help, quiz callback, followup text handler
   profile/
     render.py         # PURE: format answers + questions -> profile message text
 tests/
@@ -163,8 +164,9 @@ select 2], body clock, budget tier, physical effort tolerance, spontaneity.)
 
 ### Quiz flow
 
-State during an active quiz lives in `context.user_data` (per-user, in-memory):
-current question index, partial multi-select picks, and a pending-followup flag.
+State during an active quiz lives in aiogram's `FSMContext` (per-user, MemoryStorage,
+in-memory): current question index, partial multi-select picks, and a
+pending-followup flag.
 
 1. `/start` (or `/restart`): upsert user; **clear that user's prior answers** and
    reset `completed_at` to NULL; reset `user_data`; render Q1.
@@ -175,12 +177,12 @@ current question index, partial multi-select picks, and a pending-followup flag.
    **Done** button stores the JSON array when exactly N are picked (otherwise a
    brief "pick exactly N" answer-callback toast). Then render next.
 4. **followup**: when an option with `followup` is tapped, store the option id,
-   send the followup prompt, set pending-followup in `user_data`. The next text
-   message (caught by a gated `MessageHandler`) is stored as the followup value,
-   then advance.
+   send the followup prompt, set the FSM state to awaiting-followup. The next text
+   message (caught by a message handler gated on that state) is stored as the
+   followup value, then advance.
 5. After the last question: set `users.completed_at`, send a completion message,
    then render the profile.
-6. Bot restart mid-quiz loses in-memory `user_data` → the user re-runs `/start`.
+6. Bot restart mid-quiz loses in-memory FSM state → the user re-runs `/start`.
    Acceptable given the restart-on-/start decision. **Completed answers persist
    in SQLite across bot restarts.**
 
