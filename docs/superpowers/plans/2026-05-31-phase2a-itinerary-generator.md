@@ -1707,9 +1707,9 @@ git commit -m "feat: newtrip wizard states, session, and pure helpers"
 **Files:**
 - Create: `src/trip/handlers.py`
 - Modify: `src/bot.py`
-- Modify: `src/quiz/handlers.py:101-108` (`cmd_help`)
+- Modify: `src/quiz/handlers.py` — `/help` text **+ scope the stale callback to quiz data + delete the bare message fallback** (so `quiz_router` stops shadowing `trip_router`; see Step 3).
 
-Telegram glue, no live-bot unit tests (matches Phase 1). Verified by import + the manual smoke checklist in Task 14.
+Telegram glue, no live-bot unit tests (matches Phase 1). Verified by import + the manual smoke checklist in Task 14. The multi-router catch-all coordination (Step 3) is the main integration risk — get it right.
 
 - [ ] **Step 1: Implement the trip handlers**
 
@@ -1949,7 +1949,16 @@ async def on_retry_trip(
 
 @router.callback_query()
 async def stale_trip_callback(cb: CallbackQuery) -> None:
+    # trip_router is included last, so this is the global catch-all for any
+    # callback no handler (quiz or trip) claimed — keeps the spinner from hanging.
     await cb.answer("That button's no longer active — /trips or /newtrip.")
+
+
+@router.message()
+async def trip_fallback(message: Message) -> None:
+    # Global message catch-all (trip_router is last). Replaces the quiz router's
+    # former bare fallback, which would otherwise shadow the wizard's text steps.
+    await message.answer("Tap the buttons above, or use /start or /newtrip.")
 
 
 # ---- shared generation path -------------------------------------------------
@@ -2035,10 +2044,11 @@ def itin_to_dict(itin: Itinerary) -> dict:
 Run: `uv run python -c "from src.trip.handlers import router; print('ok')"`
 Expected: prints `ok`.
 
-- [ ] **Step 3: Update `/help` text**
+- [ ] **Step 3: Update `/help` AND fix quiz-router catch-alls (multi-router coexistence)**
 
-In `src/quiz/handlers.py`, replace the `cmd_help` body (around lines 101-108) with:
+`quiz_router` currently has two BARE catch-all handlers — `@router.callback_query()` (`stale_callback`) and `@router.message()` (`fallback`). Because `quiz_router` is included before `trip_router`, a filter-less handler matches EVERY update and stops propagation, so the /newtrip wizard buttons and text steps would never reach `trip_router`. Make all three edits in `src/quiz/handlers.py`:
 
+(a) Replace the `cmd_help` body with:
 ```python
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
@@ -2050,6 +2060,22 @@ async def cmd_help(message: Message) -> None:
         "/newtrip — plan a new trip\n"
         "/trips — view your planned trips"
     )
+```
+
+(b) Scope the stale callback to ONLY quiz callback data so non-quiz callbacks fall through to `trip_router`. Change its decorator (body unchanged):
+```python
+@router.callback_query(F.data.startswith("q:") | F.data.startswith("done:"))
+async def stale_callback(cb: CallbackQuery) -> None:
+    """Answer a stale quiz button (wrong state / post-restart) so the spinner
+    never hangs. Non-quiz callbacks fall through to the trip router."""
+    await cb.answer("That button's no longer active — /start to begin.")
+```
+
+(c) DELETE the bare `@router.message()` `fallback` handler entirely (the global message fallback now lives in `trip_router`, included last). Remove:
+```python
+@router.message()
+async def fallback(message: Message) -> None:
+    await message.answer("Tap the buttons above, or use /start to (re)take the quiz.")
 ```
 
 - [ ] **Step 4: Wire the router + Anthropic client into `bot.py`**
@@ -2099,7 +2125,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-> Router order: `quiz_router` is included first and owns the `Quiz.*` states; `trip_router` owns the `NewTrip.*` states and the trip callbacks. The catch-all `stale_trip_callback` lives on `trip_router` and only fires for callbacks no handler above claimed. The quiz router's own `stale_callback`/`fallback` only match its states + unmatched messages; verify in smoke that `/newtrip` and quiz flows don't shadow each other.
+> Router order + catch-alls: `quiz_router` is included first, `trip_router` last. CRITICAL: a router's bare (filter-less) handler matches every update and stops propagation, so only the LAST router may hold bare catch-alls. Step 3 therefore scopes quiz's stale callback to `q:`/`done:` data and deletes quiz's bare message fallback; `trip_router` holds the single global `@router.callback_query()` and `@router.message()` catch-alls. Resolution: quiz `q:`/`done:` callbacks → quiz handlers; all other callbacks → trip handlers then trip's catch-all; wizard text (NewTrip.* states) → trip handlers; everything else → trip's message fallback. `/start` (quiz, any state) still lets a user bail out of the wizard.
 
 - [ ] **Step 5: Run the full test suite**
 
