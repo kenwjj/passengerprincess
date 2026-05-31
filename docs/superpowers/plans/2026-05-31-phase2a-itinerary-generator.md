@@ -1765,6 +1765,8 @@ def _markup(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
 
 
 def _display_name(row) -> str:
+    if row is None:
+        return "Traveler"
     return row["first_name"] or (f"@{row['username']}" if row["username"] else "Traveler")
 
 
@@ -1968,13 +1970,18 @@ def _member_names(conn: sqlite3.Connection, trip_id: int) -> list[str]:
             for uid in trips_repo.get_members(conn, trip_id)]
 
 
-def _generate_blocking(
+async def _generate_and_send(
+    target: Message,
     conn: sqlite3.Connection,
     questions: list[Question],
     anthro: anthropic.Anthropic,
-    trip: sqlite3.Row,
-    member_ids: list[int],
-) -> Itinerary:
+    trip_id: int,
+) -> None:
+    trip = trips_repo.get_trip(conn, trip_id)
+    member_ids = trips_repo.get_members(conn, trip_id)
+    # All SQLite access stays on the event-loop thread (connection is
+    # check_same_thread=True). Build the prompt here, then offload ONLY the
+    # blocking Anthropic call to a worker thread.
     summaries = []
     for uid in member_ids:
         row = users_repo.get_user(conn, uid)
@@ -1985,31 +1992,20 @@ def _generate_blocking(
         end_date=trip["end_date"], activity=trip["activity"],
         sunset=DEFAULT_SUNSET, member_summaries=summaries,
     )
-    return generator.generate_itinerary(
-        anthro, ITINERARY_MODEL,
-        system=prompt.build_system_prompt(), user=user_prompt,
-        start_date=trip["start_date"], end_date=trip["end_date"],
-    )
-
-
-async def _generate_and_send(
-    target: Message,
-    conn: sqlite3.Connection,
-    questions: list[Question],
-    anthro: anthropic.Anthropic,
-    trip_id: int,
-) -> None:
-    trip = trips_repo.get_trip(conn, trip_id)
-    member_ids = trips_repo.get_members(conn, trip_id)
     try:
         itin = await asyncio.to_thread(
-            _generate_blocking, conn, questions, anthro, trip, member_ids
+            generator.generate_itinerary,
+            anthro, ITINERARY_MODEL,
+            system=prompt.build_system_prompt(), user=user_prompt,
+            start_date=trip["start_date"], end_date=trip["end_date"],
         )
-    except (ItineraryError, anthropic.AnthropicError) as exc:
-        logger.warning("itinerary generation failed for trip %s: %s", trip_id, exc)
-        await target.answer(
-            "😕 Couldn't plan that right now. Try again from /trips."
-        )
+    except ItineraryError as exc:
+        logger.warning("itinerary validation failed for trip %s: %s", trip_id, exc)
+        await target.answer("😕 Couldn't plan that right now. Try again from /trips.")
+        return
+    except Exception:  # network/transport/SDK errors — keep the trip retryable (NULL itinerary)
+        logger.exception("itinerary generation failed for trip %s", trip_id)
+        await target.answer("😕 Couldn't plan that right now. Try again from /trips.")
         return
     trips_repo.save_itinerary(
         conn, trip_id, json.dumps(itin_to_dict(itin), ensure_ascii=False)
@@ -2037,7 +2033,9 @@ def itin_to_dict(itin: Itinerary) -> dict:
     }
 ```
 
-> Note on storage: the validated `Itinerary` is serialized back to a dict via `itin_to_dict` so the stored blob matches the schema `from_dict` expects on read. (SQLite writes from the worker thread are fine here — one bot process, low volume.)
+> Note on storage + threading: the validated `Itinerary` is serialized back to a dict via `itin_to_dict` so the stored blob matches the schema `from_dict` expects on read. **All SQLite access happens on the event-loop thread** — the connection is `check_same_thread=True`, so only the blocking Anthropic call is offloaded to `asyncio.to_thread` (it never touches `conn`). The error handler catches `ItineraryError` (warn) and any other exception (logged via `logger.exception`, covers raw httpx/transport errors), always leaving the trip row's `itinerary_json` NULL so `/trips` retry works.
+
+> Known follow-up (not in this slice): `_now`, `_markup`, and `_display_name` are duplicated across `quiz/handlers.py` and `trip/handlers.py`. Extracting a shared `src/telegram_utils.py` is a reasonable cleanup later; left out here to avoid a cross-cutting refactor mid-slice.
 
 - [ ] **Step 2: Verify the handlers import**
 
