@@ -6,13 +6,16 @@ user's travel profile. Phase 1 of the travel companion project (see
 
 ## Setup
 
-Requires Python 3.11+.
+Uses [uv](https://docs.astral.sh/uv/) for dependency management. Python 3.12 is
+pinned via `.python-version`; uv installs it automatically if missing.
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
+uv sync
 ```
+
+This creates `.venv` and installs all dependencies (including dev tools) from
+`pyproject.toml` / `uv.lock`. No manual venv activation needed — prefix commands
+with `uv run`.
 
 ## Create a bot token
 
@@ -26,7 +29,7 @@ pip install -e ".[dev]"
 ## Run
 
 ```powershell
-python -m src.bot
+uv run python -m src.bot
 ```
 
 Then open your bot in Telegram and send `/start`.
@@ -50,7 +53,7 @@ malformed.
 ## Tests
 
 ```powershell
-pytest
+uv run pytest
 ```
 
 Pure logic (question loading, quiz engine, profile rendering, repositories) is
