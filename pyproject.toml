@@ -1,0 +1,21 @@
+[project]
+name = "travel-companion-bot"
+version = "0.1.0"
+description = "Telegram travel companion bot — Phase 1 onboarding quiz"
+requires-python = ">=3.11"
+dependencies = [
+    "aiogram>=3.4,<4",
+    "python-dotenv>=1.0",
+]
+
+# Run as an application, not an installable package. uv only resolves the
+# dependencies above into the venv; `src` is imported via `python -m src.bot`.
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

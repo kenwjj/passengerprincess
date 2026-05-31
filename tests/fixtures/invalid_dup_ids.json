@@ -1,0 +1,6 @@
+[
+  {"id": "dup", "category": "A", "type": "single", "text": "Q1?",
+   "options": [{"id": "x", "label": "X"}]},
+  {"id": "dup", "category": "B", "type": "single", "text": "Q2?",
+   "options": [{"id": "y", "label": "Y"}]}
+]

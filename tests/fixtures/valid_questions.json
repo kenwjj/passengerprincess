@@ -1,0 +1,34 @@
+[
+  {
+    "id": "food_adventure",
+    "category": "Food adventurousness",
+    "type": "single",
+    "text": "Your last meal on earth would be?",
+    "options": [
+      {"id": "ramen", "label": "🍜 Ramen"},
+      {"id": "sushi", "label": "🍣 Sushi"}
+    ]
+  },
+  {
+    "id": "dietary",
+    "category": "Dietary needs",
+    "type": "single",
+    "text": "Anything we should know about food?",
+    "options": [
+      {"id": "none", "label": "No restrictions"},
+      {"id": "allergies", "label": "Allergies", "followup": "Type your allergies, separated by commas:"}
+    ]
+  },
+  {
+    "id": "vibe_mix",
+    "category": "Vibe mix",
+    "type": "multi",
+    "select": 2,
+    "text": "Pick your top 2 trip vibes:",
+    "options": [
+      {"id": "nature", "label": "🌿 Nature"},
+      {"id": "culture", "label": "🏛 Culture"},
+      {"id": "food", "label": "🍴 Food"}
+    ]
+  }
+]

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "food_adventure",
+    "category": "Food adventurousness",
+    "type": "single",
+    "text": "Your last meal on earth would be?",
+    "options": [
+      {"id": "ramen", "label": "🍜 Ramen"},
+      {"id": "sushi", "label": "🍣 Sushi"},
+      {"id": "pizza", "label": "🍕 Pizza"},
+      {"id": "burger", "label": "🍔 Burger"},
+      {"id": "others", "label": "🍽 Other (type it in)", "followup": "Type your ultimate meal:"}
+    ]
+  },
+  {
+    "id": "dietary",
+    "category": "Dietary needs",
+    "type": "single",
+    "text": "Anything we should know about food?",
+    "options": [
+      {"id": "none", "label": "No restrictions"},
+      {"id": "vegetarian", "label": "🥗 Vegetarian"},
+      {"id": "vegan", "label": "🌱 Vegan"},
+      {"id": "allergies", "label": "⚠️ Allergies", "followup": "Type your allergies, separated by commas:"}
+    ]
+  },
+  {
+    "id": "drink",
+    "category": "Drink preference",
+    "type": "multi",
+    "select": 2,
+    "text": "Pick your top 2 drinks:",
+    "options": [
+      {"id": "coffee", "label": "☕ Coffee"},
+      {"id": "wine", "label": "🍷 Wine"},
+      {"id": "beer", "label": "🍺 Beer"},
+      {"id": "cocktails", "label": "🍸 Cocktails"},
+      {"id": "tea", "label": "🍵 Tea"},
+      {"id": "none", "label": "🚱 None"}
+    ]
+  },
+  {
+    "id": "pace",
+    "category": "Pace",
+    "type": "single",
+    "text": "Your ideal travel day is...",
+    "options": [
+      {"id": "cram", "label": "Cram everything in"},
+      {"id": "one_big", "label": "One big thing per day"},
+      {"id": "zero_plans", "label": "Zero plans is the dream"}
+    ]
+  },
+  {
+    "id": "crowds",
+    "category": "Crowds",
+    "type": "single",
+    "text": "Where do you want to go?",
+    "options": [
+      {"id": "bucket_list", "label": "Bucket-list spots"},
+      {"id": "hidden_gems", "label": "Hidden gems"},
+      {"id": "any", "label": "Doesn't matter"}
+    ]
+  },
+  {
+    "id": "vibe_mix",
+    "category": "Vibe mix",
+    "type": "multi",
+    "select": 2,
+    "text": "Pick your top 2 trip vibes:",
+    "options": [
+      {"id": "nature", "label": "🌿 Nature"},
+      {"id": "culture", "label": "🏛 Culture"},
+      {"id": "food", "label": "🍴 Food"},
+      {"id": "nightlife", "label": "🌃 Nightlife"}
+    ]
+  },
+  {
+    "id": "body_clock",
+    "category": "Body clock",
+    "type": "single",
+    "text": "When are you most alive?",
+    "options": [
+      {"id": "morning", "label": "🌅 Morning person"},
+      {"id": "night_owl", "label": "🦉 Night owl"},
+      {"id": "flexible", "label": "🤷 Flexible"}
+    ]
+  },
+  {
+    "id": "budget",
+    "category": "Budget tier",
+    "type": "single",
+    "text": "What's the spending vibe?",
+    "options": [
+      {"id": "backpacker", "label": "🎒 Backpacker"},
+      {"id": "mid", "label": "💳 Mid"},
+      {"id": "splurge", "label": "💎 Splurge"},
+      {"id": "mixed", "label": "🪙 Mixed"}
+    ]
+  },
+  {
+    "id": "effort",
+    "category": "Physical effort tolerance",
+    "type": "single",
+    "text": "How hard do you want to push?",
+    "options": [
+      {"id": "all_day_hike", "label": "All-day hike"},
+      {"id": "moderate", "label": "Moderate"},
+      {"id": "minimal", "label": "Minimal"}
+    ]
+  },
+  {
+    "id": "spontaneity",
+    "category": "Spontaneity",
+    "type": "single",
+    "text": "How much structure do you want?",
+    "options": [
+      {"id": "locked", "label": "Locked plans"},
+      {"id": "loose", "label": "Loose framework"},
+      {"id": "pure_vibes", "label": "Pure vibes"}
+    ]
+  }
+]
