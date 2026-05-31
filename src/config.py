@@ -24,7 +24,6 @@ def get_bot_token() -> str:
 
 
 ITINERARY_MODEL = os.environ.get("ITINERARY_MODEL", "claude-sonnet-4-6")
-DATE_MODEL = os.environ.get("DATE_MODEL", "claude-haiku-4-5-20251001")
 
 # Hardcoded for Phase 2A: late-October sunset in Jeju (KST, HH:MM). Real
 # per-location daylight lands in slice 2B (sunrise-sunset.org).

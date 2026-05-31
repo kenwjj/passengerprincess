@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "aiogram>=3.4,<4",
     "anthropic>=0.105.2",
+    "python-dateutil>=2.9.0.post0",
     "python-dotenv>=1.0",
 ]
 
