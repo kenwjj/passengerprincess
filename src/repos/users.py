@@ -37,3 +37,13 @@ def set_completed_at(conn: sqlite3.Connection, user_id: int, *, when: str) -> No
         (when, user_id),
     )
     conn.commit()
+
+
+def list_completed_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """All users who have finished the quiz, ordered by name for stable display."""
+    cur = conn.execute(
+        "SELECT telegram_user_id, username, first_name FROM users "
+        "WHERE completed_at IS NOT NULL "
+        "ORDER BY first_name COLLATE NOCASE, telegram_user_id"
+    )
+    return cur.fetchall()
