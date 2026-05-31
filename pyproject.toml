@@ -5,6 +5,7 @@ description = "Telegram travel companion bot — Phase 1 onboarding quiz"
 requires-python = ">=3.11"
 dependencies = [
     "aiogram>=3.4,<4",
+    "anthropic>=0.105.2",
     "python-dotenv>=1.0",
 ]
 

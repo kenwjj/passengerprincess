@@ -21,3 +21,20 @@ def get_bot_token() -> str:
             "BOT_TOKEN is not set. Copy .env.example to .env and add your BotFather token."
         )
     return token
+
+
+ITINERARY_MODEL = os.environ.get("ITINERARY_MODEL", "claude-sonnet-4-6")
+DATE_MODEL = os.environ.get("DATE_MODEL", "claude-haiku-4-5-20251001")
+
+# Hardcoded for Phase 2A: late-October sunset in Jeju (KST, HH:MM). Real
+# per-location daylight lands in slice 2B (sunrise-sunset.org).
+DEFAULT_SUNSET = "17:45"
+
+
+def get_anthropic_key() -> str:
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is not set. Add it to your .env file."
+        )
+    return key
