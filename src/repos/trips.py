@@ -15,6 +15,7 @@ def create_trip(
     activity: str,
     now: str,
 ) -> int:
+    """Insert a new trip row (itinerary unset) and return its id."""
     cur = conn.execute(
         """
         INSERT INTO trips

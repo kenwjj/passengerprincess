@@ -82,5 +82,6 @@ def test_list_trips_for_user_includes_creator_and_member(conn):
     ids_for_2 = {r["id"] for r in trips_repo.list_trips_for_user(conn, 2)}
     assert ids_for_2 == {t1, t2}
 
-    ids_for_1 = {r["id"] for r in trips_repo.list_trips_for_user(conn, 1)}
-    assert ids_for_1 == {t1}
+    rows_for_1 = trips_repo.list_trips_for_user(conn, 1)
+    assert {r["id"] for r in rows_for_1} == {t1}
+    assert len(rows_for_1) == 1  # creator+member of t1 => single row, no dup
