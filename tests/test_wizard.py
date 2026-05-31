@@ -36,6 +36,6 @@ def test_confirm_summary_contains_inputs():
         destination="Jeju", start_date="2026-10-24", end_date="2026-10-28",
         activity="cycling", member_names=["Ken", "Amy"],
     )
-    assert "Jeju" in out and "cycling" in out
+    assert "Jeju" in out and "Cycling" in out
     assert "Ken" in out and "Amy" in out
     assert "5" in out

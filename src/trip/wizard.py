@@ -65,6 +65,6 @@ def confirm_summary(
         f"📍 <b>Destination:</b> {destination}\n"
         f"📅 <b>Dates:</b> {start_date} → {end_date} "
         f"({day_count(start_date, end_date)} days)\n"
-        f"🏃 <b>Activity:</b> {_ACTIVITY_LABEL.get(activity, activity)} ({activity})\n"
+        f"🏃 <b>Activity:</b> {_ACTIVITY_LABEL.get(activity, activity)}\n"
         f"👥 <b>Party:</b> {names}"
     )
