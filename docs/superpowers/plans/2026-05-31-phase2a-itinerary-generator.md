@@ -1978,6 +1978,9 @@ async def _generate_and_send(
     trip_id: int,
 ) -> None:
     trip = trips_repo.get_trip(conn, trip_id)
+    if trip is None:
+        await target.answer("😕 That trip no longer exists.")
+        return
     member_ids = trips_repo.get_members(conn, trip_id)
     # All SQLite access stays on the event-loop thread (connection is
     # check_same_thread=True). Build the prompt here, then offload ONLY the
