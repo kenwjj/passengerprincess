@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from src.trip.schema import EMIT_ITINERARY_TOOL, Itinerary, ItineraryError, validate
 
-_MAX_TOKENS = 4096
+# Generous headroom so a detailed multi-day (5-7 day) itinerary isn't truncated
+# mid-JSON, which would fail validation and waste a retry.
+_MAX_TOKENS = 8192
 
 
 def _extract_itinerary_input(response) -> dict | None:
@@ -28,9 +30,10 @@ def generate_itinerary(
     end_date: str,
     max_retries: int = 1,
 ) -> Itinerary:
-    """Generate + validate an itinerary. Retries once on validation failure."""
+    """Generate + validate an itinerary. Retries up to max_retries times on a
+    missing tool call or validation failure."""
     last_error: ItineraryError | None = None
-    for attempt in range(max_retries + 1):
+    for _ in range(max_retries + 1):
         response = client.messages.create(
             model=model,
             max_tokens=_MAX_TOKENS,
