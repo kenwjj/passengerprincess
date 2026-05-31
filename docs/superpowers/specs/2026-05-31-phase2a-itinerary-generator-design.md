@@ -41,9 +41,8 @@ via `/trips`.
 | Storage | Validated itinerary JSON blob on the `trips` row | YAGNI-right for 4 users; regenerate overwrites the blob; 2C can re-emit per day |
 | Daylight | Hardcoded Jeju late-Oct sunset constant injected into the prompt; model self-flags tight days in `daylight_note` | No daylight API or code-side math in 2A |
 | Group conflicts | Feed all profiles into one prompt, let the LLM negotiate | Per spec's stated v1 answer |
-| Dates | Natural-language free text, parsed by **Claude Haiku** structured extraction → ISO `{start,end}`; confirm screen echoes the interpretation | Friendlier than ISO typing; spec earmarks Haiku for cheap extraction; confirm step is the safety net |
+| Dates | Natural-language free text, parsed by **`python-dateutil`** (no LLM) → ISO `{start,end}`; confirm screen echoes the interpretation | Dates are structured; dateutil is deterministic, free, network-free, and unit-testable. An LLM call here is overkill; the confirm step is the safety net. (Revised 2026-06-01 — was Claude Haiku.) |
 | Itinerary model | `claude-sonnet-4-6` (config-swappable) | Spec: Sonnet for itinerary generation |
-| Date-parse model | `claude-haiku-4-5-20251001` (config-swappable) | Spec: Haiku for cheap structured extraction |
 
 ## Architecture
 
@@ -55,13 +54,13 @@ translate Telegram events into engine/repo/generator calls and render results.
 
 - Existing: Python 3.11+, `aiogram` 3.x (long-polling, MemoryStorage FSM),
   stdlib `sqlite3`/`json`, `python-dotenv`, `pytest`.
-- **New:** `anthropic` SDK. No date-parsing dependency (Haiku handles dates).
+- **New:** `anthropic` SDK (Sonnet itinerary generation); `python-dateutil` (date-range parsing).
 
 ### Project structure (additions to Phase 1)
 
 ```
 src/
-  config.py          # + ANTHROPIC_API_KEY, ITINERARY_MODEL, DATE_MODEL, JEJU_SUNSET
+  config.py          # + ANTHROPIC_API_KEY, ITINERARY_MODEL, JEJU_SUNSET
   db.py              # + trips, trip_members schema (idempotent, alongside Phase 1 tables)
   llm/
     __init__.py
@@ -74,7 +73,7 @@ src/
     __init__.py
     states.py        # aiogram FSM StatesGroup: NewTrip wizard
     session.py       # FSMContext helpers (destination, raw_dates, parsed dates, activity, member picks)
-    dates.py         # THIN: Haiku call -> {start_date, end_date}; PURE validation of the result
+    dates.py         # PURE: dateutil natural-language range parsing + validation (no network)
     wizard.py        # PURE: step definitions, activity options, member-list keyboard data, confirm summary
     prompt.py        # PURE: build system + user prompt from trip inputs + party summaries + sunset
     schema.py        # emit_itinerary input_schema + Itinerary dataclasses + validate(raw) -> Itinerary
@@ -117,9 +116,10 @@ State lives in aiogram `FSMContext` (per-user, in-memory) during the wizard; the
 trip is persisted only at the generate step.
 
 1. `/newtrip` → prompt for **destination** (free text).
-2. Prompt for **dates** (free text, e.g. "Oct 24–28"). On submit, call Haiku
-   (`trip/dates.py`) to extract `{start_date, end_date}` ISO. If extraction
-   fails or yields an invalid/back-to-front range, ask the user to rephrase.
+2. Prompt for **dates** (free text, e.g. "Oct 24–28"). On submit, parse with
+   `python-dateutil` (`trip/dates.py`) into `{start_date, end_date}` ISO. If
+   parsing fails or yields an invalid/back-to-front range, ask the user to
+   rephrase. The confirm screen (step 5) echoes the interpreted dates.
 3. **Activity** → inline keyboard: 🚲 Cycling / 🚗 Self-drive / 🧭 General.
 4. **Party** → toggle list of users with `completed_at IS NOT NULL`
    (creator auto-included and shown locked). **Done** confirms. (Reuses the
@@ -199,7 +199,7 @@ such in rendering.
 - Missing `ANTHROPIC_API_KEY` → fail fast at startup (mirrors `BOT_TOKEN`).
 - Creator or a picked member has no completed profile → block generation with a
   message naming who still needs to run `/start`.
-- Haiku date extraction fails/ambiguous → ask the user to rephrase the dates.
+- dateutil date parsing fails/ambiguous → ask the user to rephrase the dates.
 - Sonnet call error/timeout → friendly "couldn't plan right now — try again";
   the `trips` row is kept with `itinerary_json` NULL and is retryable via
   `/trips`.
@@ -221,8 +221,9 @@ such in rendering.
   for a user, get trip (in-memory `:memory:` sqlite).
 - `test_wizard.py` — step transitions; activity options; member keyboard data;
   date-result validation (rejects reversed/invalid ranges).
-- `test_dates.py` — pure validation of a parsed date result (the Haiku call
-  itself is isolated and not unit-tested against the network).
+- `test_dates.py` — dateutil range parsing across common forms ("Oct 24-28",
+  "Oct 24 to 28", ISO ranges, single date), year roll-forward, and range
+  validation (reversed/overlong/unparseable). Fully deterministic, no network.
 - `generator.py` and `llm/client.py` kept thin; no live-API unit test. Optional
   manual smoke script for end-to-end generation.
 

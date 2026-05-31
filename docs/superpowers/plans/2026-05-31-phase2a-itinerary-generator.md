@@ -6,7 +6,7 @@
 
 **Architecture:** Extends Phase 1's pattern — pure, unit-tested logic (`prompt`, `schema`, `render`, `summary`, `wizard`, date validation) separated from the network layer (`llm/client.py`, `trip/generator.py`, `trip/dates.py`) and thin Telegram handlers (`trip/handlers.py`). Structured output is forced via an `emit_itinerary` tool call; the validated itinerary is stored as a JSON blob on a `trips` row.
 
-**Tech Stack:** Python 3.11+, aiogram 3.x (long-polling, MemoryStorage FSM), stdlib `sqlite3`/`json`, `anthropic` SDK (Sonnet for plans, Haiku for date parsing), `pytest`, `uv`.
+**Tech Stack:** Python 3.11+, aiogram 3.x (long-polling, MemoryStorage FSM), stdlib `sqlite3`/`json`, `anthropic` SDK (Sonnet for itinerary generation), `python-dateutil` (date-range parsing), `pytest`, `uv`.
 
 **Source spec:** `docs/superpowers/specs/2026-05-31-phase2a-itinerary-generator-design.md`
 
@@ -22,8 +22,8 @@ Created:
 - Tests: `tests/test_trips_repo.py`, `tests/test_summary.py`, `tests/test_itinerary_schema.py`, `tests/test_prompt.py`, `tests/test_trip_render.py`, `tests/test_dates.py`, `tests/test_generator.py`, `tests/test_wizard.py`.
 
 Modified:
-- `pyproject.toml` — add `anthropic` dependency.
-- `src/config.py` — `get_anthropic_key()`, `ITINERARY_MODEL`, `DATE_MODEL`, `DEFAULT_SUNSET`.
+- `pyproject.toml` — add `anthropic` + `python-dateutil` dependencies.
+- `src/config.py` — `get_anthropic_key()`, `ITINERARY_MODEL`, `DEFAULT_SUNSET`. (`DATE_MODEL` is added in Task 1 but removed again in Task 10 once date parsing drops the LLM.)
 - `src/db.py` — add `trips`, `trip_members` tables.
 - `src/repos/users.py` — `list_completed_users()`.
 - `src/quiz/handlers.py` — extend `/help` text.
@@ -1128,28 +1128,93 @@ git commit -m "feat: anthropic client factory"
 
 ---
 
-### Task 10: date parsing (Haiku) — pure validation + thin call
+### Task 10: date parsing (dateutil) — pure, no network
+
+**Decision change (2026-06-01):** date parsing no longer uses an LLM. Dates are a
+structured field; `python-dateutil` + the wizard confirm-screen safety net is
+simpler, deterministic, free, network-free, and fully unit-testable. This makes
+`DATE_MODEL` (added in Task 1) dead config, so this task removes it.
 
 **Files:**
+- Modify: `pyproject.toml` (add `python-dateutil`)
+- Modify: `src/config.py` + `tests/test_config.py` (remove dead `DATE_MODEL`)
 - Create: `src/trip/dates.py`
 - Test: `tests/test_dates.py` (create)
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Add the dateutil dependency**
+
+Run: `uv add python-dateutil`
+Expected: `python-dateutil` under `[project].dependencies`; lockfile updated.
+
+- [ ] **Step 2: Remove the now-dead DATE_MODEL config**
+
+In `src/config.py`, delete the line:
+```python
+DATE_MODEL = os.environ.get("DATE_MODEL", "claude-haiku-4-5-20251001")
+```
+In `tests/test_config.py`, inside `test_models_have_defaults`, delete the
+`monkeypatch.delenv("DATE_MODEL", raising=False)` line and the
+`assert config.DATE_MODEL == "claude-haiku-4-5-20251001"` line. Keep the
+`ITINERARY_MODEL` and `DEFAULT_SUNSET` assertions (and the `ITINERARY_MODEL`
+delenv).
+
+- [ ] **Step 3: Write the failing tests**
 
 Create `tests/test_dates.py`:
 
 ```python
+from datetime import date
+
 import pytest
 
 from src.trip import dates
 
+REF = date(2026, 6, 1)  # fixed "today" for determinism
 
-def test_validate_accepts_forward_range():
-    dates.validate_date_range("2026-10-24", "2026-10-28")  # no raise
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("Oct 24-28", ("2026-10-24", "2026-10-28")),
+        ("Oct 24 to 28", ("2026-10-24", "2026-10-28")),
+        ("October 24 - 28", ("2026-10-24", "2026-10-28")),
+        ("2026-10-24 to 2026-10-28", ("2026-10-24", "2026-10-28")),
+        ("2026-10-24 - 2026-10-28", ("2026-10-24", "2026-10-28")),
+    ],
+)
+def test_parse_common_range_forms(raw, expected):
+    assert dates.parse_date_range(raw, reference=REF) == expected
+
+
+def test_single_date_is_one_day_trip():
+    assert dates.parse_date_range("2026-10-24", reference=REF) == (
+        "2026-10-24",
+        "2026-10-24",
+    )
+
+
+def test_bare_month_day_rolls_forward_when_in_the_past():
+    # Reference is December; a bare "Oct 24-28" (no year) resolves to NEXT year.
+    assert dates.parse_date_range("Oct 24-28", reference=date(2026, 12, 1)) == (
+        "2027-10-24",
+        "2027-10-28",
+    )
+
+
+def test_explicit_year_is_not_rolled_forward():
+    # Explicit 2026 dates earlier than the reference stay in 2026 (year was given).
+    assert dates.parse_date_range(
+        "2026-01-10 to 2026-01-15", reference=date(2026, 6, 1)
+    ) == ("2026-01-10", "2026-01-15")
+
+
+def test_parse_rejects_gibberish():
+    with pytest.raises(dates.DateParseError):
+        dates.parse_date_range("sometime soon-ish", reference=REF)
 
 
 def test_validate_rejects_reversed_range():
-    with pytest.raises(dates.DateParseError, match="after"):
+    with pytest.raises(dates.DateParseError, match="precede"):
         dates.validate_date_range("2026-10-28", "2026-10-24")
 
 
@@ -1158,78 +1223,54 @@ def test_validate_rejects_unparseable():
         dates.validate_date_range("not-a-date", "2026-10-28")
 
 
-class _FakeBlock:
-    def __init__(self, name, inp):
-        self.type = "tool_use"
-        self.name = name
-        self.input = inp
-
-
-class _FakeResponse:
-    def __init__(self, inp):
-        self.content = [_FakeBlock("parse_dates", inp)]
-
-
-class _FakeClient:
-    def __init__(self, inp):
-        self._inp = inp
-        self.messages = self  # so client.messages.create works
-
-    def create(self, **kwargs):
-        return _FakeResponse(self._inp)
-
-
-def test_parse_date_range_extracts_and_validates():
-    client = _FakeClient({"start_date": "2026-10-24", "end_date": "2026-10-28"})
-    start, end = dates.parse_date_range(
-        client, "haiku", "Oct 24-28", reference_iso="2026-05-31"
-    )
-    assert (start, end) == ("2026-10-24", "2026-10-28")
-
-
-def test_parse_date_range_raises_on_reversed_model_output():
-    client = _FakeClient({"start_date": "2026-10-28", "end_date": "2026-10-24"})
-    with pytest.raises(dates.DateParseError):
-        dates.parse_date_range(client, "haiku", "garbled", reference_iso="2026-05-31")
+def test_validate_rejects_overlong_span():
+    with pytest.raises(dates.DateParseError, match="long"):
+        dates.validate_date_range("2026-01-01", "2026-06-01")
 ```
 
-- [ ] **Step 2: Run the tests, verify they fail**
+- [ ] **Step 4: Run the tests, verify they fail**
 
 Run: `uv run pytest tests/test_dates.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'src.trip.dates'`.
 
-- [ ] **Step 3: Implement date parsing**
+- [ ] **Step 5: Implement date parsing**
 
 Create `src/trip/dates.py`:
 
 ```python
-"""Parse a natural-language date range into ISO {start, end} via Claude Haiku.
+"""Parse a natural-language date range into ISO {start, end} using dateutil.
 
-The pure validation (validate_date_range) is unit-tested; the network call is
-isolated in parse_date_range and exercised in tests with a fake client.
+Pure + deterministic; no network. The wizard's confirm screen is the
+user-facing safety net for the occasional misparse.
+
+Supported forms (case-insensitive):
+  "Oct 24-28", "Oct 24 to 28", "October 24 - 28",
+  "2026-10-24 to 2026-10-28", "2026-10-24 - 2026-10-28", and a single date.
 """
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import date, datetime
+
+from dateutil import parser as dtparser
+
+_MAX_SPAN_DAYS = 60
+
+# Unambiguous range separators: word separators, an em/en dash or "..", or a
+# hyphen WITH surrounding spaces. A bare hyphen is handled by _COMPACT below, so
+# we never split the internal hyphens of an ISO date like 2026-10-24.
+_RANGE_SEP = re.compile(
+    r"\s+(?:to|until|through|thru)\s+|\s*(?:–|—|\.\.)\s*|\s+-\s+",
+    re.IGNORECASE,
+)
+# Compact "<month words> DD-DD" (e.g. "Oct 24-28"): must start with a letter so a
+# lone ISO date (which starts with a digit) is never mistaken for a range.
+_COMPACT = re.compile(r"^([A-Za-z].*?\s+)(\d{1,2})\s*-\s*(\d{1,2})\s*$")
 
 
 class DateParseError(ValueError):
     """Raised when a date range cannot be parsed or is invalid."""
-
-
-PARSE_DATES_TOOL = {
-    "name": "parse_dates",
-    "description": "Extract the trip start and end dates as ISO YYYY-MM-DD.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "start_date": {"type": "string", "description": "ISO YYYY-MM-DD"},
-            "end_date": {"type": "string", "description": "ISO YYYY-MM-DD"},
-        },
-        "required": ["start_date", "end_date"],
-    },
-}
 
 
 def validate_date_range(start: str, end: str) -> None:
@@ -1238,52 +1279,65 @@ def validate_date_range(start: str, end: str) -> None:
     except ValueError as exc:
         raise DateParseError(f"unparseable date: {exc}") from exc
     if e < s:
-        raise DateParseError("end date is after... must not precede start date")
-    if (e - s).days > 60:
+        raise DateParseError("end date must not precede start date")
+    if (e - s).days > _MAX_SPAN_DAYS:
         raise DateParseError("trip span looks too long (>60 days)")
 
 
-def _extract_tool_input(response, tool_name: str) -> dict | None:
-    for block in response.content:
-        if getattr(block, "type", None) == "tool_use" and block.name == tool_name:
-            return block.input
-    return None
+def _split(text: str) -> tuple[str, str | None]:
+    """Split a range string into (left, right); right is None for a single date."""
+    parts = _RANGE_SEP.split(text, maxsplit=1)
+    if len(parts) == 2 and parts[1].strip():
+        return parts[0].strip(), parts[1].strip()
+    m = _COMPACT.match(text)
+    if m:
+        return f"{m.group(1).strip()} {m.group(2)}", m.group(3)
+    return text, None
 
 
-def parse_date_range(
-    client, model: str, raw_text: str, *, reference_iso: str
-) -> tuple[str, str]:
-    """Call Haiku to resolve raw_text into (start_iso, end_iso). Raises DateParseError."""
-    response = client.messages.create(
-        model=model,
-        max_tokens=256,
-        system=(
-            f"Today is {reference_iso}. Resolve the user's trip dates to absolute "
-            "ISO dates in the future. If a year is omitted, choose the next "
-            "upcoming occurrence. Reply ONLY by calling parse_dates."
-        ),
-        messages=[{"role": "user", "content": raw_text}],
-        tools=[PARSE_DATES_TOOL],
-        tool_choice={"type": "tool", "name": "parse_dates"},
-    )
-    data = _extract_tool_input(response, "parse_dates")
-    if not data:
-        raise DateParseError("model did not return parsed dates")
-    start, end = data.get("start_date", ""), data.get("end_date", "")
-    validate_date_range(start, end)
-    return start, end
+def parse_date_range(raw_text: str, *, reference: date) -> tuple[str, str]:
+    """Resolve raw_text into (start_iso, end_iso). Raises DateParseError."""
+    text = raw_text.strip()
+    if not text:
+        raise DateParseError("no dates provided")
+    left, right = _split(text)
+    base = datetime(reference.year, reference.month, reference.day)
+    try:
+        start_dt = dtparser.parse(left, default=base, fuzzy=True)
+        end_dt = (
+            dtparser.parse(right, default=start_dt, fuzzy=True) if right else start_dt
+        )
+    except (ValueError, OverflowError) as exc:
+        raise DateParseError(f"couldn't parse dates: {exc}") from exc
+    start, end = start_dt.date(), end_dt.date()
+    # If no explicit 4-digit year was given and the range is already past,
+    # assume the next upcoming occurrence (e.g. "Oct 24-28" in December).
+    year_given = re.search(r"\d{4}", text) is not None
+    if not year_given and start < reference:
+        try:
+            start = start.replace(year=start.year + 1)
+            end = end.replace(year=end.year + 1)
+        except ValueError as exc:  # e.g. Feb 29 in a non-leap year
+            raise DateParseError("ambiguous date; please include the year") from exc
+    validate_date_range(start.isoformat(), end.isoformat())
+    return start.isoformat(), end.isoformat()
 ```
 
-- [ ] **Step 4: Run the tests, verify they pass**
+- [ ] **Step 6: Run the tests, verify they pass**
 
 Run: `uv run pytest tests/test_dates.py -v`
-Expected: PASS (5 tests).
+Expected: PASS (12 tests — 5 parametrized + 7).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Run the full suite** (confirm the DATE_MODEL removal didn't break test_config)
+
+Run: `uv run pytest`
+Expected: all pass.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/trip/dates.py tests/test_dates.py
-git commit -m "feat: Haiku-backed natural-language date parsing"
+git add pyproject.toml uv.lock src/trip/dates.py tests/test_dates.py src/config.py tests/test_config.py
+git commit -m "feat: dateutil natural-language date parsing (no LLM)"
 ```
 
 ---
@@ -1683,7 +1737,7 @@ from aiogram.types import (
     Message,
 )
 
-from src.config import DATE_MODEL, DEFAULT_SUNSET, ITINERARY_MODEL
+from src.config import DEFAULT_SUNSET, ITINERARY_MODEL
 from src.profile.summary import summarize_profile
 from src.questions import Question
 from src.trip import dates, generator, prompt, render, session, wizard
@@ -1699,10 +1753,6 @@ router = Router()
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def _today_iso() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
 
 
 def _markup(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
@@ -1739,14 +1789,11 @@ async def on_destination(message: Message, state: FSMContext) -> None:
 
 
 @router.message(NewTrip.dates, F.text)
-async def on_dates(
-    message: Message, state: FSMContext, anthro: anthropic.Anthropic
-) -> None:
+async def on_dates(message: Message, state: FSMContext) -> None:
+    today = datetime.now(timezone.utc).date()
     try:
-        start, end = await asyncio.to_thread(
-            dates.parse_date_range,
-            anthro, DATE_MODEL, message.text.strip(), reference_iso=_today_iso(),
-        )
+        # dateutil parsing is fast + synchronous — no thread offload needed.
+        start, end = dates.parse_date_range(message.text.strip(), reference=today)
     except dates.DateParseError:
         await message.answer("Couldn't read those dates — try \"Oct 24-28\".")
         return
@@ -2080,9 +2127,8 @@ Append to `.env.example`:
 
 ```
 ANTHROPIC_API_KEY=
-# Optional overrides:
+# Optional override:
 # ITINERARY_MODEL=claude-sonnet-4-6
-# DATE_MODEL=claude-haiku-4-5-20251001
 ```
 
 - [ ] **Step 2: Document setup in `README.md`**
@@ -2127,7 +2173,7 @@ git commit -m "docs: Phase 2A setup + smoke checklist"
 - JSON-blob storage on trips row → Tasks 2, 4, 13. ✓
 - Per-day text rendering + lead disclaimer → Task 8. ✓
 - `/trips` list + view + retry-on-NULL → Tasks 4, 13. ✓
-- Natural-language dates via Haiku + confirm safety net → Tasks 10, 12-13. ✓
+- Natural-language dates via dateutil (no LLM) + confirm safety net → Tasks 10, 12-13. ✓
 - Hardcoded sunset + model self-flags daylight → Tasks 1, 7 (prompt rule), 8 (footer). ✓
 - Error handling: missing key fail-fast (Task 1/13 wiring), no-profile block (13), LLM failure retryable (11, 13), stale callbacks (13). ✓
 - Sonnet default + Haiku A/B note → config defaults (Task 1); A/B is a soak action, not code. ✓
