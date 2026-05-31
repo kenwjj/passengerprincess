@@ -104,7 +104,9 @@ async def cmd_help(message: Message) -> None:
         "I'm your travel companion (in training).\n"
         "/start — take the onboarding quiz\n"
         "/restart — redo the quiz\n"
-        "/profile — see your saved profile"
+        "/profile — see your saved profile\n"
+        "/newtrip — plan a new trip\n"
+        "/trips — view your planned trips"
     )
 
 
@@ -170,10 +172,10 @@ async def on_done(
     await _send_next_or_finish(cb.message, state, conn, questions, cb.from_user.id)
 
 
-@router.callback_query()
+@router.callback_query(F.data.startswith("q:") | F.data.startswith("done:"))
 async def stale_callback(cb: CallbackQuery) -> None:
-    """Answer any callback not handled above (stale button, wrong state, post-restart)
-    so the Telegram client never hangs on a loading spinner."""
+    """Answer a stale quiz button (wrong state / post-restart) so the spinner
+    never hangs. Non-quiz callbacks fall through to the trip router."""
     await cb.answer("That button's no longer active — /start to begin.")
 
 
@@ -192,8 +194,3 @@ async def on_followup_text(
         conn, message.from_user.id, qid, message.text.strip() or "—", now=_now()
     )
     await _send_next_or_finish(message, state, conn, questions, message.from_user.id)
-
-
-@router.message()
-async def fallback(message: Message) -> None:
-    await message.answer("Tap the buttons above, or use /start to (re)take the quiz.")
