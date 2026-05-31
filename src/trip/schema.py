@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 ALLOWED_STOP_TYPES = frozenset(
     {"ride", "food", "sight", "rest", "accommodation"}
@@ -122,7 +122,7 @@ _REQUIRED_STOP_KEYS = ("name", "type", "note")
 def _expected_dates(start_date: str, end_date: str) -> list[str]:
     start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
     span = (end - start).days
-    return [(start.fromordinal(start.toordinal() + i)).isoformat() for i in range(span + 1)]
+    return [(start + timedelta(days=i)).isoformat() for i in range(span + 1)]
 
 
 def validate(raw: dict, *, start_date: str, end_date: str) -> Itinerary:
