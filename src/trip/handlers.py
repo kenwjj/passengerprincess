@@ -47,6 +47,8 @@ def _markup(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
 
 
 def _display_name(row) -> str:
+    if row is None:
+        return "Traveler"
     return row["first_name"] or (f"@{row['username']}" if row["username"] else "Traveler")
 
 
@@ -250,29 +252,6 @@ def _member_names(conn: sqlite3.Connection, trip_id: int) -> list[str]:
             for uid in trips_repo.get_members(conn, trip_id)]
 
 
-def _generate_blocking(
-    conn: sqlite3.Connection,
-    questions: list[Question],
-    anthro: anthropic.Anthropic,
-    trip: sqlite3.Row,
-    member_ids: list[int],
-) -> Itinerary:
-    summaries = []
-    for uid in member_ids:
-        row = users_repo.get_user(conn, uid)
-        answers = answers_repo.get_answers(conn, uid)
-        summaries.append(f"{_display_name(row)}: {summarize_profile(questions, answers)}")
-    user_prompt = prompt.build_user_prompt(
-        destination=trip["destination"], start_date=trip["start_date"],
-        end_date=trip["end_date"], activity=trip["activity"],
-        sunset=DEFAULT_SUNSET, member_summaries=summaries,
-    )
-    return generator.generate_itinerary(
-        anthro, ITINERARY_MODEL,
-        system=prompt.build_system_prompt(), user=user_prompt,
-        start_date=trip["start_date"], end_date=trip["end_date"],
-    )
-
 
 async def _generate_and_send(
     target: Message,
@@ -283,15 +262,33 @@ async def _generate_and_send(
 ) -> None:
     trip = trips_repo.get_trip(conn, trip_id)
     member_ids = trips_repo.get_members(conn, trip_id)
+    # All SQLite access stays on the event-loop thread (connection is
+    # check_same_thread=True). Build the prompt here, then offload ONLY the
+    # blocking Anthropic call to a worker thread.
+    summaries = []
+    for uid in member_ids:
+        row = users_repo.get_user(conn, uid)
+        answers = answers_repo.get_answers(conn, uid)
+        summaries.append(f"{_display_name(row)}: {summarize_profile(questions, answers)}")
+    user_prompt = prompt.build_user_prompt(
+        destination=trip["destination"], start_date=trip["start_date"],
+        end_date=trip["end_date"], activity=trip["activity"],
+        sunset=DEFAULT_SUNSET, member_summaries=summaries,
+    )
     try:
         itin = await asyncio.to_thread(
-            _generate_blocking, conn, questions, anthro, trip, member_ids
+            generator.generate_itinerary,
+            anthro, ITINERARY_MODEL,
+            system=prompt.build_system_prompt(), user=user_prompt,
+            start_date=trip["start_date"], end_date=trip["end_date"],
         )
-    except (ItineraryError, anthropic.AnthropicError) as exc:
-        logger.warning("itinerary generation failed for trip %s: %s", trip_id, exc)
-        await target.answer(
-            "😕 Couldn't plan that right now. Try again from /trips."
-        )
+    except ItineraryError as exc:
+        logger.warning("itinerary validation failed for trip %s: %s", trip_id, exc)
+        await target.answer("😕 Couldn't plan that right now. Try again from /trips.")
+        return
+    except Exception:  # network/transport/SDK errors — keep the trip retryable (NULL itinerary)
+        logger.exception("itinerary generation failed for trip %s", trip_id)
+        await target.answer("😕 Couldn't plan that right now. Try again from /trips.")
         return
     trips_repo.save_itinerary(
         conn, trip_id, json.dumps(itin_to_dict(itin), ensure_ascii=False)
