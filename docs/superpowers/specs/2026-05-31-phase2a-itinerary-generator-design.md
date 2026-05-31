@@ -251,3 +251,6 @@ hosting/deploy.
   shows bad results).
 - Whether `/newtrip` should eventually run in the group chat (2D-ish).
 - Real route grounding via a hand-loaded Jeju dataset vs. Google Maps (2B).
+- Itinerary model: default `claude-sonnet-4-6`; A/B `claude-haiku-4-5` on the
+  same Jeju trip during soak (model is config-swappable) and downgrade if Haiku
+  holds up — cost is negligible at 4-user scale, so this is a quality call.
