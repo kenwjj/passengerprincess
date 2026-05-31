@@ -23,6 +23,23 @@ CREATE TABLE IF NOT EXISTS answers (
   answered_at      TEXT    NOT NULL,
   PRIMARY KEY (telegram_user_id, question_id)
 );
+
+CREATE TABLE IF NOT EXISTS trips (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  creator_id     INTEGER NOT NULL,
+  destination    TEXT    NOT NULL,
+  start_date     TEXT    NOT NULL,
+  end_date       TEXT    NOT NULL,
+  activity       TEXT    NOT NULL,
+  itinerary_json TEXT,
+  created_at     TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS trip_members (
+  trip_id          INTEGER NOT NULL,
+  telegram_user_id INTEGER NOT NULL,
+  PRIMARY KEY (trip_id, telegram_user_id)
+);
 """
 
 
